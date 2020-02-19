@@ -4,7 +4,7 @@ SHA ?= $(shell git describe --match=none --always --abbrev=8 --dirty)
 TAG ?= $(shell git describe --tag --always --dirty)
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 REGISTRY_AND_USERNAME := $(REGISTRY)/$(USERNAME)
-NAME := CHANGEME
+NAME := metal-metadata-server
 IMAGE := $(REGISTRY_AND_USERNAME)/$(NAME)
 MODULE := $(shell head -1 go.mod | cut -d' ' -f2)
 
@@ -81,6 +81,7 @@ docker-%: ## Builds the specified target defined in the Dockerfile using the doc
 .PHONY: container
 container: ## Build the container image.
 	@$(MAKE) docker-$@ TARGET_ARGS="--push=$(PUSH)"
+	sed -i'' -e 's@image: .*@image: '"$(REGISTRY_AND_USERNAME)/$(NAME):$(TAG)"'@' ./config/default/server_image_patch.yaml
 
 # Code Quality
 
@@ -113,3 +114,15 @@ login: ## Logs in to the configured container registry.
 .PHONY: clean
 clean: ## Cleans up all artifacts.
 	@-rm -rf $(ARTIFACTS)
+
+.PHONY: deploy
+deploy:  ## Deploy to a cluster. This is for testing purposes only.
+	kubectl apply -k config/default
+
+.PHONY: destroy
+destroy: ## Remove from a cluster. This is for testing purposes only.
+	kubectl delete -k config/default
+
+.PHONY: release
+release: container ## Create the release YAML. The build result will be ouput to the specified local destination.
+	@$(MAKE) local-$@ DEST=./$(ARTIFACTS)

@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - image: docker.io/autonomy/metal-metadata-server:latest
+        name: server
+        imagePullPolicy: Always
