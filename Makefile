@@ -81,7 +81,6 @@ docker-%: ## Builds the specified target defined in the Dockerfile using the doc
 .PHONY: container
 container: ## Build the container image.
 	@$(MAKE) docker-$@ TARGET_ARGS="--push=$(PUSH)"
-	sed -i'' -e 's@image: .*@image: '"$(REGISTRY_AND_USERNAME)/$(NAME):$(TAG)"'@' ./config/default/server_image_patch.yaml
 
 # Code Quality
 
