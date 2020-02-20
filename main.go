@@ -50,7 +50,7 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 		Resource: "machines",
 	}
 
-	metalMachineList, err := k8sClient.Resource(metalMachineGVR).Namespace("default").List(metav1.ListOptions{})
+	metalMachineList, err := k8sClient.Resource(metalMachineGVR).Namespace("").List(metav1.ListOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			http.Error(w, err.Error(), 404)
@@ -91,7 +91,7 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			machineData, err := k8sClient.Resource(capiMachineGVR).Namespace("default").Get(ownerMachine, metav1.GetOptions{})
+			machineData, err := k8sClient.Resource(capiMachineGVR).Namespace("").Get(ownerMachine, metav1.GetOptions{})
 			if err != nil {
 				if apierrors.IsNotFound(err) {
 					http.Error(w, "machine not found", 404)
