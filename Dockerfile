@@ -89,6 +89,6 @@ ARG TAG
 RUN cd config/server \
   && kustomize edit set image server=${REGISTRY_AND_USERNAME}/${NAME}:${TAG} \
   && cd - \
-  && kubectl kustomize config >/release.yaml
+  && kubectl kustomize config/default >/release.yaml
 FROM scratch AS release
 COPY --from=release-build /release.yaml /release.yaml
