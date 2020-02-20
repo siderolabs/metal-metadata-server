@@ -20,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	http.HandleFunc("/configdata", FetchConfig)
-	http.ListenAndServe(":8585", nil)
+	http.ListenAndServe(":8080", nil)
 }
 
 func FetchConfig(w http.ResponseWriter, r *http.Request) {
