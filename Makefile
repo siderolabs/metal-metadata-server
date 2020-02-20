@@ -19,7 +19,6 @@ PUSH ?= false
 COMMON_ARGS := --file=Dockerfile
 COMMON_ARGS += --progress=$(PROGRESS)
 COMMON_ARGS += --platform=$(PLATFORM)
-COMMON_ARGS += --push=$(PUSH)
 COMMON_ARGS += --build-arg=SHA=$(SHA)
 COMMON_ARGS += --build-arg=TAG=$(TAG)
 COMMON_ARGS += --build-arg=MODULE=$(MODULE)
@@ -82,6 +81,11 @@ docker-%: ## Builds the specified target defined in the Dockerfile using the doc
 container: ## Build the container image.
 	@$(MAKE) docker-$@ TARGET_ARGS="--push=$(PUSH)"
 
+
+.PHONY: release
+release: container ## Create the release YAML. The build result will be ouput to the specified local destination.
+	@$(MAKE) local-$@ DEST=./$(ARTIFACTS)
+
 # Code Quality
 
 .PHONY: fmt
@@ -121,7 +125,3 @@ deploy:  ## Deploy to a cluster. This is for testing purposes only.
 .PHONY: destroy
 destroy: ## Remove from a cluster. This is for testing purposes only.
 	kubectl delete -k config/default
-
-.PHONY: release
-release: container ## Create the release YAML. The build result will be ouput to the specified local destination.
-	@$(MAKE) local-$@ DEST=./$(ARTIFACTS)
