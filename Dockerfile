@@ -86,9 +86,9 @@ COPY ./config ./config
 ARG REGISTRY_AND_USERNAME
 ARG NAME
 ARG TAG
-RUN cd config/metadata-server \
-  && kustomize edit set image controller=${REGISTRY_AND_USERNAME}/${NAME}:${TAG} \
-  && cd .. \
-  && kubectl kustomize default >/release.yaml
+RUN cd config/server \
+  && kustomize edit set image server=${REGISTRY_AND_USERNAME}/${NAME}:${TAG} \
+  && cd - \
+  && kubectl kustomize config >/release.yaml
 FROM scratch AS release
 COPY --from=release-build /release.yaml /release.yaml
