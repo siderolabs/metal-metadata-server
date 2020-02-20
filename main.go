@@ -91,7 +91,17 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			machineData, err := k8sClient.Resource(capiMachineGVR).Namespace("").Get(ownerMachine, metav1.GetOptions{})
+			metalMachineNS, present, err := unstructured.NestedString(metalMachine.Object, "metadata", "namespace")
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			if !present {
+				http.Error(w, "namespace not found for metalMachine", 404)
+				return
+			}
+
+			machineData, err := k8sClient.Resource(capiMachineGVR).Namespace(metalMachineNS).Get(ownerMachine, metav1.GetOptions{})
 			if err != nil {
 				if apierrors.IsNotFound(err) {
 					http.Error(w, "machine not found", 404)
