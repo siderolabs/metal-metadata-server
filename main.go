@@ -63,14 +63,19 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Range through all metalMachines, seeing if we can match inventory by UUID
 	for _, metalMachine := range metalMachineList.Items {
-		invRef, _, err := unstructured.NestedString(metalMachine.Object, "spec", "machineInventoryRef", "name")
+		serverRef, _, err := unstructured.NestedString(metalMachine.Object, "spec", "serverRef", "name")
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
 
+		// Check if server ref isn't set. Assuming this is an unstructured thing where it's not an error, just empty.
+		if serverRef == "" {
+			continue
+		}
+
 		// If ref matches, fetch the bootstrap data from machine resource that owns this metal machine
-		if invRef == uuid {
+		if serverRef == uuid {
 			ownerList, present, err := unstructured.NestedSlice(metalMachine.Object, "metadata", "ownerReferences")
 			if err != nil {
 				http.Error(w, err.Error(), 500)
@@ -129,6 +134,11 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 			}
 
 			w.Write(decodedData)
+			return
 		}
 	}
+
+	// Made it through all metal machines w/ no result
+	http.Error(w, "matching machine not found", 404)
+	return
 }
