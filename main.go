@@ -14,13 +14,15 @@ import (
 )
 
 var kubeconfig *string
+var port *string
 
 func main() {
 	kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+	port = flag.String("port", "8080", "port to use for serving metadata")
 	flag.Parse()
 
 	http.HandleFunc("/configdata", FetchConfig)
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":"+*port, nil)
 }
 
 func FetchConfig(w http.ResponseWriter, r *http.Request) {
