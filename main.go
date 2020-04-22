@@ -16,6 +16,8 @@ import (
 var kubeconfig *string
 var port *string
 
+const capiVersion = "v1alpha3"
+
 func main() {
 	kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
 	port = flag.String("port", "8080", "port to use for serving metadata")
@@ -42,14 +44,19 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 
 	metalMachineGVR := schema.GroupVersionResource{
 		Group:    "infrastructure.cluster.x-k8s.io",
-		Version:  "v1alpha2",
+		Version:  capiVersion,
 		Resource: "metalmachines",
 	}
 
 	capiMachineGVR := schema.GroupVersionResource{
 		Group:    "cluster.x-k8s.io",
-		Version:  "v1alpha2",
+		Version:  capiVersion,
 		Resource: "machines",
+	}
+
+	secretGVR := schema.GroupVersionResource{
+		Version:  "v1",
+		Resource: "secrets",
 	}
 
 	metalMachineList, err := k8sClient.Resource(metalMachineGVR).Namespace("").List(metav1.ListOptions{})
@@ -119,7 +126,28 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			bootstrapData, present, err := unstructured.NestedString(machineData.Object, "spec", "bootstrap", "data")
+			bootstrapSecretName, present, err := unstructured.NestedString(machineData.Object, "spec", "bootstrap", "dataSecretName")
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			if !present {
+				http.Error(w, "dataSecretName not found for machine", 404)
+				return
+			}
+
+			bootstrapSecretData, err := k8sClient.Resource(secretGVR).Namespace(metalMachineNS).Get(bootstrapSecretName, metav1.GetOptions{})
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					http.Error(w, "bootstrap secret not found", 404)
+					return
+				}
+
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			bootstrapData, present, err := unstructured.NestedString(bootstrapSecretData.Object, "data", "value")
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return
