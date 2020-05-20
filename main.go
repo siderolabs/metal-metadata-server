@@ -2,21 +2,29 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
 
+	jsonpatch "github.com/evanphx/json-patch"
+	"github.com/ghodss/yaml"
+	metalv1alpha1 "github.com/talos-systems/metal-controller-manager/api/v1alpha1"
 	"github.com/talos-systems/metal-metadata-server/pkg/client"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 var kubeconfig *string
 var port *string
 
-const capiVersion = "v1alpha3"
+const (
+	capiVersion  = "v1alpha3"
+	metalVersion = "v1alpha1"
+)
 
 func main() {
 	kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
@@ -59,6 +67,12 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 		Resource: "secrets",
 	}
 
+	serverGVR := schema.GroupVersionResource{
+		Group:    "metal.arges.dev",
+		Version:  metalVersion,
+		Resource: "servers",
+	}
+
 	metalMachineList, err := k8sClient.Resource(metalMachineGVR).Namespace("").List(metav1.ListOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -72,19 +86,19 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Range through all metalMachines, seeing if we can match inventory by UUID
 	for _, metalMachine := range metalMachineList.Items {
-		serverRef, _, err := unstructured.NestedString(metalMachine.Object, "spec", "serverRef", "name")
+		serverRefString, _, err := unstructured.NestedString(metalMachine.Object, "spec", "serverRef", "name")
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
 
 		// Check if server ref isn't set. Assuming this is an unstructured thing where it's not an error, just empty.
-		if serverRef == "" {
+		if serverRefString == "" {
 			continue
 		}
 
 		// If ref matches, fetch the bootstrap data from machine resource that owns this metal machine
-		if serverRef == uuid {
+		if serverRefString == uuid {
 			ownerList, present, err := unstructured.NestedSlice(metalMachine.Object, "metadata", "ownerReferences")
 			if err != nil {
 				http.Error(w, err.Error(), 500)
@@ -161,6 +175,54 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return
+			}
+
+			// Convert server uuid to unstructured obj and then to structured obj.
+			serverRef, err := k8sClient.Resource(serverGVR).Get(serverRefString, metav1.GetOptions{})
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			serverObj := &metalv1alpha1.Server{}
+
+			err = runtime.DefaultUnstructuredConverter.FromUnstructured(serverRef.UnstructuredContent(), serverObj)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			// Check if server object has config patches
+			if len(serverObj.Spec.ConfigPatches) > 0 {
+				marshalledPatches, err := json.Marshal(serverObj.Spec.ConfigPatches)
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+
+				jsonDecodedData, err := yaml.YAMLToJSON(decodedData)
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+
+				patch, err := jsonpatch.DecodePatch(marshalledPatches)
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+
+				jsonDecodedData, err = patch.Apply(jsonDecodedData)
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+
+				decodedData, err = yaml.JSONToYAML(jsonDecodedData)
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
 			}
 
 			w.Write(decodedData)
