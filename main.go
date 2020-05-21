@@ -105,17 +105,28 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if !present {
-				http.Error(w, "ownerRef not found for metalMachine", 404)
+				http.Error(w, "ownerRefList not found for metalMachine", 404)
 				return
 			}
 
-			ownerMachine, present, err := unstructured.NestedString(ownerList[0].(map[string]interface{}), "name")
-			if err != nil {
-				http.Error(w, err.Error(), 500)
-				return
+			var ownerRef *metav1.OwnerReference
+
+			for _, ownerItem := range ownerList {
+				tempOwnerRef := &metav1.OwnerReference{}
+				err = runtime.DefaultUnstructuredConverter.FromUnstructured(ownerItem.(map[string]interface{}), tempOwnerRef)
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+
+				if tempOwnerRef.APIVersion == "cluster.x-k8s.io/"+capiVersion && tempOwnerRef.Kind == "Machine" {
+					ownerRef = tempOwnerRef
+					break
+				}
 			}
-			if !present {
-				http.Error(w, "owner machine not found for metalMachine", 404)
+
+			if ownerRef == nil {
+				http.Error(w, "unable to find ownerref for metalMachine", 500)
 				return
 			}
 
@@ -129,7 +140,7 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			machineData, err := k8sClient.Resource(capiMachineGVR).Namespace(metalMachineNS).Get(ownerMachine, metav1.GetOptions{})
+			machineData, err := k8sClient.Resource(capiMachineGVR).Namespace(metalMachineNS).Get(ownerRef.Name, metav1.GetOptions{})
 			if err != nil {
 				if apierrors.IsNotFound(err) {
 					http.Error(w, "machine not found", 404)
