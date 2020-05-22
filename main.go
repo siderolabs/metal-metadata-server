@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -11,6 +13,8 @@ import (
 	"github.com/ghodss/yaml"
 	metalv1alpha1 "github.com/talos-systems/metal-controller-manager/api/v1alpha1"
 	"github.com/talos-systems/metal-metadata-server/pkg/client"
+	"github.com/talos-systems/talos/pkg/config"
+	"github.com/talos-systems/talos/pkg/config/types/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -36,6 +40,8 @@ func main() {
 }
 
 func FetchConfig(w http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
+
 	vals := r.URL.Query()
 	uuid := vals.Get("uuid")
 	if len(uuid) == 0 {
@@ -73,7 +79,7 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 		Resource: "servers",
 	}
 
-	metalMachineList, err := k8sClient.Resource(metalMachineGVR).Namespace("").List(metav1.ListOptions{})
+	metalMachineList, err := k8sClient.Resource(metalMachineGVR).Namespace("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			http.Error(w, err.Error(), 404)
@@ -140,7 +146,7 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			machineData, err := k8sClient.Resource(capiMachineGVR).Namespace(metalMachineNS).Get(ownerRef.Name, metav1.GetOptions{})
+			machineData, err := k8sClient.Resource(capiMachineGVR).Namespace(metalMachineNS).Get(ctx, ownerRef.Name, metav1.GetOptions{})
 			if err != nil {
 				if apierrors.IsNotFound(err) {
 					http.Error(w, "machine not found", 404)
@@ -161,7 +167,7 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			bootstrapSecretData, err := k8sClient.Resource(secretGVR).Namespace(metalMachineNS).Get(bootstrapSecretName, metav1.GetOptions{})
+			bootstrapSecretData, err := k8sClient.Resource(secretGVR).Namespace(metalMachineNS).Get(ctx, bootstrapSecretName, metav1.GetOptions{})
 			if err != nil {
 				if apierrors.IsNotFound(err) {
 					http.Error(w, "bootstrap secret not found", 404)
@@ -189,7 +195,7 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Convert server uuid to unstructured obj and then to structured obj.
-			serverRef, err := k8sClient.Resource(serverGVR).Get(serverRefString, metav1.GetOptions{})
+			serverRef, err := k8sClient.Resource(serverGVR).Get(ctx, serverRefString, metav1.GetOptions{})
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return
@@ -203,7 +209,7 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// Check if server object has config patches
+			// Handle patches added to server object
 			if len(serverObj.Spec.ConfigPatches) > 0 {
 				marshalledPatches, err := json.Marshal(serverObj.Spec.ConfigPatches)
 				if err != nil {
@@ -236,6 +242,30 @@ func FetchConfig(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			// Append or add a node label to kubelet extra args
+			configStruct, err := config.NewFromBytes(decodedData)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			switch config := configStruct.(type) {
+			case *v1alpha1.Config:
+				if _, ok := config.MachineConfig.MachineKubelet.KubeletExtraArgs["node-labels"]; ok {
+					config.MachineConfig.MachineKubelet.KubeletExtraArgs["node-labels"] += fmt.Sprintf(",metal.arges.dev/uuid=%s", serverObj.Name)
+				} else {
+					config.MachineConfig.MachineKubelet.KubeletExtraArgs = make(map[string]string)
+					config.MachineConfig.MachineKubelet.KubeletExtraArgs["node-labels"] = fmt.Sprintf("metal.arges.dev/uuid=%s", serverObj.Name)
+				}
+
+				decodedData, err = config.Bytes()
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+			}
+
+			// Finally return config data
 			w.Write(decodedData)
 			return
 		}
